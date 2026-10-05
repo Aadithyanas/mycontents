@@ -1,0 +1,236 @@
+// Prisma schema for Secure Digital Creator Portfolio & Protected Video Management Platform
+// Academic Project: Web Technology + Advanced Computer Networks (ACN) + Technology/Information Security (TIS)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GUEST
+  USER
+  CREATOR
+  ADMIN
+}
+
+enum AccessType {
+  PUBLIC
+  LOGIN_REQUIRED
+  REQUEST_ACCESS
+  PRIVATE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum SeverityLevel {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  VIDEO_VIEW
+  ACCESS_REQUEST
+  ACCESS_APPROVED
+  ACCESS_REJECTED
+  VIDEO_CREATED
+  VIDEO_UPDATED
+  VIDEO_DELETED
+  PASSWORD_CHANGED
+  SECURITY_EVENT
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          Role            @default(USER)
+  title         String?         @default("Viewer")
+  bio           String?
+  department    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  videos         Video[]          @relation("CreatorVideos")
+  accessRequests AccessRequest[]
+  videoSessions  VideoSession[]
+  securityLogs   SecurityLog[]
+  loginAttempts  LoginAttempt[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  videos      Video[]
+  createdAt   DateTime @default(now())
+}
+
+model Video {
+  id               String          @id @default(cuid())
+  title            String
+  slug             String          @unique
+  description      String          @db.Text
+  thumbnailUrl     String
+  videoUrl         String
+  duration         String          // e.g. "04:18"
+  durationSeconds  Int             @default(258)
+  accessType       AccessType      @default(PUBLIC)
+  featured         Boolean         @default(false)
+  views            Int             @default(0)
+  tags             String[]        @default([])
+  resolution       String          @default("4K UHD")
+  fps              Int             @default(60)
+  bitrate          String          @default("24 Mbps")
+  videoCodec       String          @default("H.265 / HEVC")
+  audioCodec       String          @default("AAC 320kbps")
+  watermarkEnabled Boolean         @default(true)
+  
+  categoryId       String
+  category         Category        @relation(fields: [categoryId], references: [id])
+  
+  creatorId        String
+  creator          User            @relation("CreatorVideos", fields: [creatorId], references: [id])
+  
+  accessRequests   AccessRequest[]
+  videoSessions    VideoSession[]
+  
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([accessType])
+  @@index([categoryId])
+  @@index([featured])
+}
+
+model AccessRequest {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  videoId         String
+  video           Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  reason          String        @db.Text
+  status          RequestStatus @default(PENDING)
+  rejectionReason String?       @db.Text
+  
+  requestedAt     DateTime      @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  expiresAt       DateTime?
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([status])
+}
+
+model VideoSession {
+  id                  String   @id @default(cuid())
+  token               String   @unique
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  videoId             String
+  video               Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  ipAddress           String
+  userAgent           String
+  resolutionDelivered String   @default("1080p")
+  bytesTransferred    BigInt   @default(0)
+  active              Boolean  @default(true)
+  startedAt           DateTime @default(now())
+  expiresAt           DateTime
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([token])
+  @@index([active])
+}
+
+model SecurityLog {
+  id        String        @id @default(cuid())
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  ipAddress String
+  userAgent String?
+  action    AuditAction
+  event     String
+  severity  SeverityLevel @default(INFO)
+  status    String        @default("SUCCESS")
+  details   String?       @db.Text
+  timestamp DateTime      @default(now())
+
+  @@index([severity])
+  @@index([action])
+  @@index([timestamp])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String
+  success   Boolean
+  reason    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  timestamp DateTime @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([timestamp])
+}
